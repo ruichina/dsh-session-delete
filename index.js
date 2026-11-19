@@ -12,6 +12,15 @@
  * Deletion order is deliberate: the stored log goes first, because it is the
  * irreversible part; only then is the Session removed from the workspace
  * registry, so a refused or failed file removal leaves the sidebar unchanged.
+ *
+ * A Session that the Host once resumed stays live in this process until it
+ * exits, and the Session list the Client pulls always includes live Sessions —
+ * even after their stored log is gone. A plugin cannot dispose another owner's
+ * live Session, so the residue would be listed again by every fresh baseline
+ * with no Workspace account, and the sidebar would show it in its "Ungrouped"
+ * bucket. A deletion therefore leaves the id in the registry-global archive
+ * set, whose members every grouping surface hides, as a tombstone; the next
+ * Host start drops the residue and `pruneTombstones` drops the tombstone.
  */
 import { readdir, rm, rmdir } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
@@ -74,6 +83,60 @@ export function apply(ctx) {
       'session-delete: session_delete tool',
     )
   })
+
+  ctx.inject(['workspaceRegistry', 'sessionPersistence'], (cleanupCtx) => {
+    cleanupCtx.effect(() => {
+      void pruneTombstones(cleanupCtx)
+      return () => {}
+    }, 'session-delete: tombstone cleanup')
+  })
+}
+
+/**
+ * Drop archive tombstones this process no longer needs.
+ *
+ * A deletion leaves its id archived so the live residue stays hidden. The
+ * archive set is durable, so without cleanup the ids outlive the residue. Only
+ * an id that no Workspace owns, that no Agent holds live, and that has no
+ * stored log can be a tombstone — anything else is a Session the user archived
+ * on purpose, which stays accounted by its Workspace and keeps its log.
+ * @param ctx - Host plugin context carrying the registry and persistence.
+ */
+async function pruneTombstones(ctx) {
+  const registry = ctx.get('workspaceRegistry')
+  const persistence = ctx.get('sessionPersistence')
+  if (registry === undefined || persistence === undefined) return
+  let archived
+  try {
+    archived = [...registry.archivedSessionIds]
+  } catch {
+    return
+  }
+  if (archived.length === 0) return
+  const accounted = new Set()
+  try {
+    for (const workspace of registry.list()) {
+      for (const sessionId of workspace.sessionIds ?? []) accounted.add(sessionId)
+    }
+  } catch {
+    return
+  }
+  const sessions = ctx.get('sessions')
+  for (const sessionId of archived) {
+    if (accounted.has(sessionId) || sessions?.get?.(sessionId) !== undefined) continue
+    let snapshot
+    try {
+      snapshot = await persistence.stat(sessionId, {})
+    } catch {
+      continue
+    }
+    if (snapshot !== undefined) continue
+    try {
+      await registry.unarchiveSession(sessionId)
+    } catch {
+      // Best effort — an unchanged tombstone stays hidden and is retried next start.
+    }
+  }
 }
 
 /**
@@ -166,14 +229,37 @@ async function deleteOne(ctx, sessionId, signal) {
     }
   }
 
-  // Removes the archive flag this call set, plus any pin and workspace account.
+  // The log is gone, so the Session can never come back; its account, pin,
+  // and any earlier archive flag are only residue now.
   const registryResult = await detachFromRegistry(ctx, sessionId)
   if (typeof registryResult === 'string') return registryResult
-  if (!removedLog && registryResult !== true) {
-    await restoreArchive(registry, sessionId, archived)
-    return REASON_NOT_FOUND
+
+  // A live Session survives its removed log until this process exits, and the
+  // Session list keeps listing it. Leave the archive tombstone so no grouping
+  // surface shows the residue as "Ungrouped" — whether this call removed the
+  // log or found it already gone.
+  const stillLive = liveSession !== undefined || sessions?.get?.(sessionId) !== undefined
+  await leaveTombstone(registry, sessionId, stillLive)
+
+  return !removedLog && registryResult !== true ? REASON_NOT_FOUND : null
+}
+
+/**
+ * Re-archive a still-live Session after its log is gone. The archive set hides
+ * the residue from every grouping surface until the Host restarts and drops it.
+ * @param registry - the workspace registry, when present.
+ * @param sessionId - the Session whose log was removed.
+ * @param stillLive - whether the Host still holds the Session live.
+ */
+async function leaveTombstone(registry, sessionId, stillLive) {
+  if (!stillLive || registry === undefined) return
+  try {
+    if (!registry.archivedSessionIds.includes(sessionId)) {
+      await registry.archiveSession(sessionId)
+    }
+  } catch {
+    // A missing tombstone only risks the residue row; never fail the deletion.
   }
-  return null
 }
 
 /**
@@ -295,7 +381,8 @@ function projectionCachePath(logPath, sessionId) {
 }
 
 /**
- * Remove a Session from every workspace account, the archive set, and the pin set.
+ * Remove a Session from every workspace account, its pin, and any archive flag
+ * that hid the row before the deletion.
  * @param ctx - Host plugin context.
  * @param sessionId - the Session to remove.
  * @returns true when an account changed, false when nothing referenced it, or a failure reason.

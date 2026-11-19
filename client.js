@@ -392,10 +392,11 @@ window.__ModuleLoader__.load({
 
     /**
      * Repull the sidebar's session list in place, so no stale row survives.
-     * A plain baseline pull is not enough on its own: a Session that is still
-     * retained by an open view survives the pull and reappears under
-     * "Ungrouped" once its workspace account is gone. Drop that id locally
-     * first, then pull the baseline back.
+     * The pull alone is not enough: a Session the Host still holds live — for
+     * example one whose log was deleted while an Agent kept it resident — comes
+     * back from `session.list` with no Workspace account, and the sidebar would
+     * show it under "Ungrouped". Drop the id locally first; the next baseline
+     * pull then carries only the Sessions that really exist.
      * @param ctx - Client plugin context.
      * @param sessionId - the Session that no longer exists.
      * @returns whether the list was updated.
