@@ -28,6 +28,13 @@ window.__ModuleLoader__.load({
     const NOT_READY = 'not-registered'
     /** How long the success notice stays on screen. */
     const NOTICE_MS = 2400
+    /**
+     * Delay between the success notice and the reload that repaints the
+     * sidebar. The reload is what removes a stale row: deleting a Session's log
+     * emits no Session event, so the Client's own session-list cache keeps the
+     * id and would otherwise show it under "Ungrouped".
+     */
+    const RELOAD_DELAY_MS = 600
     /** Focusable descendants a Tab cycle walks inside the dialog. */
     const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
@@ -506,11 +513,18 @@ window.__ModuleLoader__.load({
           return portal(h(DeleteDialogForm, { key: request.sessionId, request, title }))
         }
 
-        /** The transient success notice; announces the outcome and clears itself. */
+        /** The transient success notice; announces the outcome, then repaints the list. */
         function DeletedNotice({ title }) {
           React.useEffect(() => {
-            const timer = setTimeout(() => { pending.set(null) }, NOTICE_MS)
-            return () => { clearTimeout(timer) }
+            const clearTimer = setTimeout(() => { pending.set(null) }, NOTICE_MS)
+            const page = globalThis.location
+            const reloadTimer = typeof page?.reload === 'function'
+              ? setTimeout(() => { page.reload() }, RELOAD_DELAY_MS)
+              : undefined
+            return () => {
+              clearTimeout(clearTimer)
+              if (reloadTimer !== undefined) clearTimeout(reloadTimer)
+            }
           }, [])
           return h('div', { className: 'dsd-notice', role: 'status' },
             h(TrashGlyph, { size: 13 }),

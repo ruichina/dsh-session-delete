@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-session-delete",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "DeepSeek Harness plugin: delete sessions permanently from the sidebar, through the row menu, the row hover action, or the session_delete agent tool.",
