@@ -26,8 +26,8 @@ const SESSION_LOG_FILE_PATTERN = /^session(?:\.v\d+)?\.jsonl(?:\.zstd)?$/
 const MAX_SESSIONS_PER_REQUEST = 50
 
 /** Stable failure reasons the Client localizes. */
-const REASON_ACTIVE = 'active'
 const REASON_BUSY = 'busy'
+const REASON_LOCKED = 'locked'
 const REASON_NOT_FOUND = 'not-found'
 
 /**
@@ -119,27 +119,71 @@ function createSessionDeleter(ctx) {
  * @returns a failure reason, or null when the Session is gone.
  */
 async function deleteOne(ctx, sessionId, signal) {
-  const agents = ctx.get('agents')
-  // A live Agent still owns its append handle; removing the log underneath it
-  // would fail on Windows and corrupt the record elsewhere.
-  if (agents !== undefined && agents.get(sessionId) !== undefined) return REASON_ACTIVE
-  // A closed Session can still have running work (subagents, jobs, schedules).
-  // The archive path refuses that work behind the same waterfall, so the
-  // deletion path must not silently pull the log out from under it.
+  // "In use" means running work, not a live Agent: an Agent stays registered
+  // for as long as its owner keeps the Session open, including Sessions the
+  // user merely looked at earlier. The same waterfall the archive path uses
+  // reports a real running turn, subagent, job, or schedule.
   const activity = await runningActivity(ctx, sessionId)
   if (activity.length > 0) return REASON_BUSY
+
+  const registry = ctx.get('workspaceRegistry')
+  // Gate a live but idle Agent before removing its log: an archived Session
+  // cannot start another model step, so nothing appends to a removed file.
+  let archived = false
+  if (registry !== undefined) {
+    try {
+      await registry.archiveSession(sessionId)
+      archived = true
+    } catch {
+      // Best effort — an already-archived or unregistered Session just skips it.
+    }
+  }
 
   const persistence = ctx.get('sessionPersistence')
   const snapshot = persistence === undefined ? undefined : await persistence.stat(sessionId, { signal })
   const logPath = snapshot === undefined ? undefined : snapshot.location?.path
-  const removedLog = typeof logPath === 'string' && logPath.length > 0
-    ? await removeLog(logPath, sessionId)
-    : false
+  let removedLog = false
+  if (typeof logPath === 'string' && logPath.length > 0) {
+    try {
+      removedLog = await removeLog(logPath, sessionId)
+    } catch (error) {
+      await restoreArchive(registry, sessionId, archived)
+      if (isLockError(error)) return REASON_LOCKED
+      throw error
+    }
+  }
 
+  // Removes the archive flag this call set, plus any pin and workspace account.
   const registryResult = await detachFromRegistry(ctx, sessionId)
   if (typeof registryResult === 'string') return registryResult
-  if (!removedLog && registryResult !== true) return REASON_NOT_FOUND
+  if (!removedLog && registryResult !== true) {
+    await restoreArchive(registry, sessionId, archived)
+    return REASON_NOT_FOUND
+  }
   return null
+}
+
+/**
+ * Drop a temporary archive flag after a failed removal.
+ * @param registry - the workspace registry, when present.
+ * @param sessionId - the Session to restore.
+ * @param archived - whether this call archived it.
+ */
+async function restoreArchive(registry, sessionId, archived) {
+  if (!archived || registry === undefined) return
+  try {
+    await registry.unarchiveSession(sessionId)
+  } catch {
+    // Restoring visibility is best effort; the failure is already reported.
+  }
+}
+
+/**
+ * @param error - a filesystem failure.
+ * @returns whether the target is still held by another handle.
+ */
+function isLockError(error) {
+  return error?.code === 'EBUSY' || error?.code === 'EPERM' || error?.code === 'EACCES'
 }
 
 /**
@@ -179,14 +223,14 @@ async function removeLog(logPath, sessionId) {
       await rm(directory, { recursive: true })
       removed = true
     } catch (error) {
-      if (error?.code !== 'ENOENT') throw new Error(`cannot remove ${directory}: ${messageOf(error)}`)
+      if (error?.code !== 'ENOENT') throw fsFailure('cannot remove', directory, error)
     }
   } else {
     let entries = []
     try {
       entries = await readdir(directory)
     } catch (error) {
-      if (error?.code !== 'ENOENT') throw new Error(`cannot read ${directory}: ${messageOf(error)}`)
+      if (error?.code !== 'ENOENT') throw fsFailure('cannot read', directory, error)
     }
     for (const entry of entries) {
       if (!SESSION_LOG_FILE_PATTERN.test(entry)) continue
@@ -195,7 +239,7 @@ async function removeLog(logPath, sessionId) {
         await rm(target)
         removed = true
       } catch (error) {
-        if (error?.code !== 'ENOENT') throw new Error(`cannot remove ${target}: ${messageOf(error)}`)
+        if (error?.code !== 'ENOENT') throw fsFailure('cannot remove', target, error)
       }
     }
     try {
@@ -273,7 +317,7 @@ async function detachFromRegistry(ctx, sessionId) {
 function createDeleteTool(deleteSessions) {
   return {
     name: 'session_delete',
-    description: 'Permanently delete stored sessions and their chat logs from this computer. A session that is open right now, or that still has running work, is not deleted; archive it first.',
+    description: 'Permanently delete stored sessions and their chat logs from this computer. A session that is running work (a reply, a subagent, a job, or a schedule) is not deleted; stop or archive it first.',
     parameters: {
       type: 'object',
       properties: {
@@ -344,6 +388,19 @@ function readSessionIds(payload) {
     if (!sessionIds.includes(value)) sessionIds.push(value)
   }
   return sessionIds
+}
+
+/**
+ * Wrap a filesystem failure so its errno survives for the caller's classification.
+ * @param action - what failed, for the message.
+ * @param target - the path involved.
+ * @param error - the underlying failure.
+ * @returns the wrapped error.
+ */
+function fsFailure(action, target, error) {
+  const wrapped = new Error(`${action} ${target}: ${messageOf(error)}`)
+  wrapped.code = error?.code
+  return wrapped
 }
 
 /**

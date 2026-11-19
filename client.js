@@ -21,8 +21,8 @@ window.__ModuleLoader__.load({
     /** Exact route owned by the Host half on the shared `/api` channel. */
     const ROUTE_PATH = 'api/session-delete/delete'
     /** Failure reasons the Host returns as stable codes. */
-    const REASON_ACTIVE = 'active'
     const REASON_BUSY = 'busy'
+    const REASON_LOCKED = 'locked'
     const REASON_NOT_FOUND = 'not-found'
     /** Local marker for "the Host route is not mounted" (HTTP 404). */
     const NOT_READY = 'not-registered'
@@ -62,8 +62,8 @@ window.__ModuleLoader__.load({
         'dialog.confirm': 'Delete',
         'dialog.pending': 'Deleting…',
         'dialog.done': 'Session deleted',
-        'dialog.active': 'This session is in use right now. Switch to another session, then delete it.',
-        'dialog.busy': 'This session still has running work. Archive it first to stop that work, then delete it.',
+        'dialog.busy': 'This session is running work right now (a reply, a subagent, a job, or a schedule). Stop or archive it first, then delete it.',
+        'dialog.locked': 'DSH still holds this session’s files open. Restart DSH, then delete it.',
         'dialog.notFound': 'This session is already gone — it may have been deleted.',
         'dialog.failed': 'Deletion failed: {message}',
         'dialog.transport': 'Lost the connection to DSH: {message}',
@@ -79,8 +79,8 @@ window.__ModuleLoader__.load({
         'dialog.confirm': '删除',
         'dialog.pending': '正在删除…',
         'dialog.done': '会话已删除',
-        'dialog.active': '这个会话正在使用中。请先切换到其他会话，再删除它。',
-        'dialog.busy': '这个会话还有正在运行的任务。请先归档它（会停止这些任务），再删除。',
+        'dialog.busy': '这个会话正在运行任务（回答、子代理、后台任务或定时任务）。请先停止或归档它，再删除。',
+        'dialog.locked': 'DSH 仍占用这个会话的文件。请重启 DSH 后再删除。',
         'dialog.notFound': '这个会话已经不在了，可能已被删除。',
         'dialog.failed': '删除失败：{message}',
         'dialog.transport': '与 DSH 的连接中断：{message}',
@@ -454,8 +454,8 @@ window.__ModuleLoader__.load({
          */
         function reasonText(reason) {
           switch (reason) {
-            case REASON_ACTIVE: return t('dialog.active')
             case REASON_BUSY: return t('dialog.busy')
+            case REASON_LOCKED: return t('dialog.locked')
             case REASON_NOT_FOUND: return t('dialog.notFound')
             default: return t('dialog.failed', { message: reason })
           }
@@ -612,7 +612,7 @@ window.__ModuleLoader__.load({
                 return
               }
               setError(reasonText(failure.reason))
-              if (failure.reason === REASON_ACTIVE) setBlocked(true)
+              if (failure.reason === REASON_BUSY) setBlocked(true)
             } catch (reason) {
               busyRef.current = false
               setBusy(false)

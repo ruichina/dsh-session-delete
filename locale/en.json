@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Session delete",
-    "description": "Deletes a session permanently from the sidebar: right-click a session row (or open its \"...\" menu) and choose \"Delete session…\", or use the trash button that appears on row hover. Both open a confirmation dialog, then remove the stored chat log, its projection cache, and the workspace entry, and reload the page so the row is gone (a reload discards an unsent draft). A session that is in use is refused — switch to another session first — and a session that still has running work must be archived first, which stops that work. The same operation is exposed to the agent as the session_delete tool. Turning the plugin off restores the stock sidebar and removes the tool."
+    "description": "Deletes a session permanently from the sidebar: right-click a session row (or open its \"...\" menu) and choose \"Delete session…\", or use the trash button that appears on row hover. Both open a confirmation dialog, then remove the stored chat log, its projection cache, and the workspace entry, and reload the page so the row is gone (a reload discards an unsent draft). A session that is running work is refused; stop or archive it first. A session you merely opened earlier, including the one on screen, can be deleted. The same operation is exposed to the agent as the session_delete tool. Turning the plugin off restores the stock sidebar and removes the tool."
   }
 }
