@@ -6,7 +6,7 @@ English | [中文](README.md)
 
 DSH's built-in "Archive session" only hides a row; the log stays on disk. This plugin adds real deletion: **Delete session…** in the row menu (right-click, or the row's `...` menu), plus a trash button on row hover. Confirming removes the stored chat log, its projection cache, and the workspace entry.
 
-- Version: `1.0.2`
+- Version: `1.0.3`
 - Tested with: DSH `0.2.2-rc.5` (desktop)
 - License: MIT
 - Repositories: [GitHub](https://github.com/ruichina/dsh-session-delete) · [Gitee mirror](https://gitee.com/jurassic-wangzr/dsh-session-delete)
@@ -18,7 +18,7 @@ DSH's built-in "Archive session" only hides a row; the log stays on disk. This p
 | Menu row **Delete session…** | Session row menu (right-click or `...`), placed before the built-in Archive action |
 | Trash button | On row hover, after the archive and pin buttons |
 | Confirmation dialog | Cancel focused by default, Escape / backdrop click cancels, buttons disabled while deleting |
-| Success notice | A short "Session deleted" pill, then the page **reloads** after ~0.6 s so no stale row remains |
+| Success notice | A short "Session deleted" pill, plus an in-place **session-list repull** (no page reload), so the stale row disappears |
 | Agent tool `session_delete` | The same Host method, taking a list of session ids |
 
 ## Install
@@ -50,7 +50,7 @@ In the **Host process**, after confirmation:
 - A Session that is **running work** (a reply, a subagent, a job, or a schedule) is refused; stop or archive it first. The check reuses the archive path's `workspace/session-activity` waterfall, so a Session you merely opened earlier — including the one on screen — **can** be deleted.
 - The dialog handles one Session at a time; the `session_delete` tool accepts up to 50 ids per request.
 - Attachments and terminals of the Session are out of scope.
-- **A successful deletion reloads the page once.** Removing the log emits no Session event, so the Client's cached session list would keep the id and show it under "Ungrouped"; the reload is what guarantees the row is gone. The reload discards an unsent composer draft, so copy or send it first.
+- **A successful deletion refreshes only the session list.** It calls the Client's `sessions.refresh()`, which repulls the list baseline without reloading the page — the conversation and an unsent composer draft are untouched. A full reload is only the fallback when that Client capability is unavailable.
 
 ## How it works
 

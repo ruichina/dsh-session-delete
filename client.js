@@ -29,10 +29,10 @@ window.__ModuleLoader__.load({
     /** How long the success notice stays on screen. */
     const NOTICE_MS = 2400
     /**
-     * Delay between the success notice and the reload that repaints the
-     * sidebar. The reload is what removes a stale row: deleting a Session's log
-     * emits no Session event, so the Client's own session-list cache keeps the
-     * id and would otherwise show it under "Ungrouped".
+     * Fallback delay before a full reload, used only when the Client cannot
+     * repull its session list in place. Deleting a Session's log emits no
+     * Session event, so without a repull the cached list keeps the id and
+     * shows the deleted row under "Ungrouped".
      */
     const RELOAD_DELAY_MS = 600
     /** Focusable descendants a Tab cycle walks inside the dialog. */
@@ -389,6 +389,25 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Repull the sidebar's session list in place, so no stale row survives.
+     * `sessions.refresh()` is the Client's own baseline pull: it updates the
+     * list rows without reloading the page, the conversation, or the composer.
+     * @param ctx - Client plugin context.
+     * @returns whether the list was repulled.
+     */
+    async function refreshSessionList(ctx) {
+      const sessions = ctx.get('sessions')
+      if (sessions === undefined || sessions === null) return false
+      if (typeof sessions.refresh !== 'function') return false
+      try {
+        await sessions.refresh()
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    /**
      * @param value - untrusted Host value.
      * @returns the outcome shape this module renders.
      */
@@ -508,24 +527,31 @@ window.__ModuleLoader__.load({
           if (request === null) return null
           const title = request.displayTitle.length > 0 ? request.displayTitle : t('dialog.untitled')
           if (request.done === true) {
-            return portal(h(DeletedNotice, { key: `${request.sessionId}:done`, title }))
+            return portal(h(DeletedNotice, {
+              key: `${request.sessionId}:done`,
+              title,
+              reload: request.reload === true,
+            }))
           }
           return portal(h(DeleteDialogForm, { key: request.sessionId, request, title }))
         }
 
-        /** The transient success notice; announces the outcome, then repaints the list. */
-        function DeletedNotice({ title }) {
+        /**
+         * The transient success notice. The list is already repulled; a full
+         * reload happens only when that in-place refresh was unavailable.
+         */
+        function DeletedNotice({ title, reload }) {
           React.useEffect(() => {
             const clearTimer = setTimeout(() => { pending.set(null) }, NOTICE_MS)
             const page = globalThis.location
-            const reloadTimer = typeof page?.reload === 'function'
+            const reloadTimer = reload && typeof page?.reload === 'function'
               ? setTimeout(() => { page.reload() }, RELOAD_DELAY_MS)
               : undefined
             return () => {
               clearTimeout(clearTimer)
               if (reloadTimer !== undefined) clearTimeout(reloadTimer)
             }
-          }, [])
+          }, [reload])
           return h('div', { className: 'dsd-notice', role: 'status' },
             h(TrashGlyph, { size: 13 }),
             h('span', null, t('dialog.done', { title })),
@@ -608,7 +634,14 @@ window.__ModuleLoader__.load({
               busyRef.current = false
               setBusy(false)
               if (failure === undefined) {
-                pending.set({ sessionId: request.sessionId, displayTitle: request.displayTitle, done: true })
+                // Repull the list in place; only a Client without that pull needs a reload.
+                const refreshed = await refreshSessionList(ctx)
+                pending.set({
+                  sessionId: request.sessionId,
+                  displayTitle: request.displayTitle,
+                  done: true,
+                  reload: !refreshed,
+                })
                 return
               }
               setError(reasonText(failure.reason))
