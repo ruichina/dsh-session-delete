@@ -16,6 +16,14 @@
   "engines": {
     "dsh": ">=0.2.2-rc.5"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wangzr/dsh-session-delete.git"
+  },
+  "homepage": "https://github.com/wangzr/dsh-session-delete#readme",
+  "bugs": {
+    "url": "https://github.com/wangzr/dsh-session-delete/issues"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
