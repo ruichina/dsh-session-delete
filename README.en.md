@@ -6,7 +6,7 @@ English | [中文](README.md)
 
 DSH's built-in "Archive session" only hides a row; the log stays on disk. This plugin adds real deletion: **Delete session…** in the row menu (right-click, or the row's `...` menu), plus a trash button on row hover. Confirming removes the stored chat log, its projection cache, and the workspace entry.
 
-- Version: `1.0.5`
+- Version: `1.0.6`
 - npm package: `dsh-session-delete-pro`
 - Tested with: DSH `0.2.2-rc.5` (desktop)
 - License: MIT
@@ -34,7 +34,7 @@ Once installed it shows up under **Settings → Plugins → Installed** and can 
 
 ## Install
 
-From npm (1.0.5):
+From npm (1.0.6):
 
 ```bash
 dsh plugin --profile desktop add dsh-session-delete-pro
