@@ -65,6 +65,7 @@ window.__ModuleLoader__.load({
         'dialog.busy': 'This session is running work right now (a reply, a subagent, a job, or a schedule). Stop or archive it first, then delete it.',
         'dialog.locked': 'DSH still holds this session’s files open. Restart DSH, then delete it.',
         'dialog.notFound': 'This session is already gone — it may have been deleted.',
+        'dialog.alreadyGone': 'This session no longer exists; the row was removed from the list.',
         'dialog.failed': 'Deletion failed: {message}',
         'dialog.transport': 'Lost the connection to DSH: {message}',
         'dialog.notReady': 'The delete endpoint is not available (HTTP 404). Check that the plugin is enabled, then reload the page.',
@@ -82,6 +83,7 @@ window.__ModuleLoader__.load({
         'dialog.busy': '这个会话正在运行任务（回答、子代理、后台任务或定时任务）。请先停止或归档它，再删除。',
         'dialog.locked': 'DSH 仍占用这个会话的文件。请重启 DSH 后再删除。',
         'dialog.notFound': '这个会话已经不在了，可能已被删除。',
+        'dialog.alreadyGone': '这个会话已不存在，已从列表移除。',
         'dialog.failed': '删除失败：{message}',
         'dialog.transport': '与 DSH 的连接中断：{message}',
         'dialog.notReady': '删除接口未就绪（HTTP 404）。请确认插件已启用，并重新加载页面。',
@@ -530,6 +532,7 @@ window.__ModuleLoader__.load({
             return portal(h(DeletedNotice, {
               key: `${request.sessionId}:done`,
               title,
+              gone: request.gone === true,
               reload: request.reload === true,
             }))
           }
@@ -540,7 +543,7 @@ window.__ModuleLoader__.load({
          * The transient success notice. The list is already repulled; a full
          * reload happens only when that in-place refresh was unavailable.
          */
-        function DeletedNotice({ title, reload }) {
+        function DeletedNotice({ title, gone, reload }) {
           React.useEffect(() => {
             const clearTimer = setTimeout(() => { pending.set(null) }, NOTICE_MS)
             const page = globalThis.location
@@ -554,7 +557,7 @@ window.__ModuleLoader__.load({
           }, [reload])
           return h('div', { className: 'dsd-notice', role: 'status' },
             h(TrashGlyph, { size: 13 }),
-            h('span', null, t('dialog.done', { title })),
+            h('span', null, t(gone ? 'dialog.alreadyGone' : 'dialog.done', { title })),
           )
         }
 
@@ -633,13 +636,16 @@ window.__ModuleLoader__.load({
               const failure = outcome.failed.find(entry => entry.sessionId === request.sessionId)
               busyRef.current = false
               setBusy(false)
-              if (failure === undefined) {
-                // Repull the list in place; only a Client without that pull needs a reload.
+              if (failure === undefined || failure.reason === REASON_NOT_FOUND) {
+                // A row whose Session is already gone is stale Client state:
+                // repulling the list is the cleanup, not an error.
+                const gone = failure !== undefined
                 const refreshed = await refreshSessionList(ctx)
                 pending.set({
                   sessionId: request.sessionId,
                   displayTitle: request.displayTitle,
                   done: true,
+                  gone,
                   reload: !refreshed,
                 })
                 return
