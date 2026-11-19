@@ -23,7 +23,7 @@ DSH's built-in "Archive session" only hides a row; the log stays on disk. This p
 ## Install
 
 ```bash
-git clone https://github.com/wangzr/dsh-session-delete.git
+git clone https://github.com/ruichina/dsh-session-delete.git
 ```
 
 Either **Plugins → Add plugin** and pick the cloned directory (local link install), or run:

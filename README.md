@@ -24,7 +24,7 @@ DSH 自带的「归档会话」只是把会话从列表里隐藏，日志仍然�
 ## 安装
 
 ```bash
-git clone https://github.com/wangzr/dsh-session-delete.git
+git clone https://github.com/ruichina/dsh-session-delete.git
 ```
 
 方式一（图形界面）：**插件** → **添加插件** → 选择克隆下来的目录（本地链接安装）。
