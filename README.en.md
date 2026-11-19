@@ -9,6 +9,7 @@ DSH's built-in "Archive session" only hides a row; the log stays on disk. This p
 - Version: `1.0.0`
 - Tested with: DSH `0.2.2-rc.5` (desktop)
 - License: MIT
+- Repositories: [GitHub](https://github.com/ruichina/dsh-session-delete) · [Gitee mirror](https://gitee.com/jurassic-wangzr/dsh-session-delete)
 
 ## Features
 
@@ -24,6 +25,8 @@ DSH's built-in "Archive session" only hides a row; the log stays on disk. This p
 
 ```bash
 git clone https://github.com/ruichina/dsh-session-delete.git
+# or the Gitee mirror
+git clone https://gitee.com/jurassic-wangzr/dsh-session-delete.git
 ```
 
 Either **Plugins → Add plugin** and pick the cloned directory (local link install), or run:

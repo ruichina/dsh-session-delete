@@ -10,6 +10,7 @@ DSH 自带的「归档会话」只是把会话从列表里隐藏，日志仍然�
 - 兼容：DSH `0.2.2-rc.5`（桌面版验证）
 - 许可：MIT
 - 关键词：`dsh-plugin` · `deepseek-harness` · `dsh` · `deepseek`
+- 仓库：[GitHub](https://github.com/ruichina/dsh-session-delete) · [Gitee 镜像](https://gitee.com/jurassic-wangzr/dsh-session-delete)
 
 ## 功能
 
@@ -25,6 +26,8 @@ DSH 自带的「归档会话」只是把会话从列表里隐藏，日志仍然�
 
 ```bash
 git clone https://github.com/ruichina/dsh-session-delete.git
+# 或 Gitee 镜像
+git clone https://gitee.com/jurassic-wangzr/dsh-session-delete.git
 ```
 
 方式一（图形界面）：**插件** → **添加插件** → 选择克隆下来的目录（本地链接安装）。
