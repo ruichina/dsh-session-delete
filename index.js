@@ -16,11 +16,15 @@
  * A Session that the Host once resumed stays live in this process until it
  * exits, and the Session list the Client pulls always includes live Sessions —
  * even after their stored log is gone. A plugin cannot dispose another owner's
- * live Session, so the residue would be listed again by every fresh baseline
- * with no Workspace account, and the sidebar would show it in its "Ungrouped"
- * bucket. A deletion therefore leaves the id in the registry-global archive
- * set, whose members every grouping surface hides, as a tombstone; the next
- * Host start drops the residue and `pruneTombstones` drops the tombstone.
+ * live Session, so a fresh baseline would list the residue again with no
+ * Workspace account, and the sidebar would show it in its "Ungrouped" bucket.
+ * A deletion therefore waits out the last Client reference through the public
+ * `sessions.retainInfo` observation (a retained Session keeps being listed),
+ * then disposes the Host Agent — which detaches the Session, removes it from
+ * every list, and persists its buffered events; only then does the removal
+ * touch the files. If the wait fails or times out, the id stays in the
+ * registry-global archive set as a tombstone that hides the residue, and
+ * `pruneTombstones` drops the tombstone at the next Host start.
  */
 import { readdir, rm, rmdir } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
@@ -33,11 +37,14 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const SESSION_LOG_FILE_PATTERN = /^session(?:\.v\d+)?\.jsonl(?:\.zstd)?$/
 /** Upper bound for one request, so a stray call cannot walk the whole history. */
 const MAX_SESSIONS_PER_REQUEST = 50
+/** How long one deletion waits for the last Client reference to leave. */
+const RELEASE_WAIT_MS = 15_000
 
 /** Stable failure reasons the Client localizes. */
 const REASON_BUSY = 'busy'
 const REASON_LOCKED = 'locked'
 const REASON_NOT_FOUND = 'not-found'
+const REASON_RETAINED = 'retained'
 
 /**
  * Register the Host half.
@@ -189,11 +196,28 @@ async function deleteOne(ctx, sessionId, signal) {
   const activity = await runningActivity(ctx, sessionId)
   if (activity.length > 0) return REASON_BUSY
 
+  // A Client reference keeps even a log-less live Session in the Host's list,
+  // so the residue would be re-listed after the files are gone. Wait out the
+  // last reference through the public observation, then dispose the Host Agent
+  // — that detaches the Session and flushes its buffered events before removal.
+  const released = await releaseClientReferences(ctx, sessionId, signal)
+  let disposedAgent = false
+  if (released) {
+    disposedAgent = await disposeHostAgent(ctx, sessionId)
+  } else {
+    // The wait timed out or broke: hide the residue with an archive tombstone
+    // instead of deleting underneath a Client still using the Session.
+    const registry = ctx.get('workspaceRegistry')
+    await leaveTombstone(registry, sessionId, true)
+    return REASON_RETAINED
+  }
+
   const registry = ctx.get('workspaceRegistry')
   // Gate a live but idle Agent before removing its log: an archived Session
-  // cannot start another model step, so nothing appends to a removed file.
+  // cannot start another model step, so nothing appends to a removed file. An
+  // Agent this call already disposed needs no gate.
   let archived = false
-  if (registry !== undefined) {
+  if (!disposedAgent && registry !== undefined) {
     try {
       await registry.archiveSession(sessionId)
       archived = true
@@ -234,14 +258,91 @@ async function deleteOne(ctx, sessionId, signal) {
   const registryResult = await detachFromRegistry(ctx, sessionId)
   if (typeof registryResult === 'string') return registryResult
 
-  // A live Session survives its removed log until this process exits, and the
-  // Session list keeps listing it. Leave the archive tombstone so no grouping
-  // surface shows the residue as "Ungrouped" — whether this call removed the
-  // log or found it already gone.
+  // A Session that stayed live despite the release — or a disposal that left
+  // it attached — would be re-listed with no Workspace account; leave the
+  // archive tombstone so no grouping surface shows it as "Ungrouped".
   const stillLive = liveSession !== undefined || sessions?.get?.(sessionId) !== undefined
   await leaveTombstone(registry, sessionId, stillLive)
 
   return !removedLog && registryResult !== true ? REASON_NOT_FOUND : null
+}
+
+/**
+ * Wait until no Client page retains one Session.
+ *
+ * `sessions.retainInfo` counts references per consumer source; a retained
+ * Session is listed by `session.list` even without a stored log. The returned
+ * source has stable identity, so subscribing once is safe across generations.
+ * @param ctx - Host plugin context.
+ * @param sessionId - the Session about to be removed.
+ * @param signal - caller cancellation.
+ * @returns whether the count reached zero (or was already zero).
+ */
+async function releaseClientReferences(ctx, sessionId, signal) {
+  const sessions = ctx.get('sessions')
+  if (sessions === undefined || typeof sessions.retainInfo !== 'function') return true
+  let info
+  try {
+    info = sessions.retainInfo(sessionId)
+  } catch {
+    return true
+  }
+  if (info === undefined || typeof info.subscribe !== 'function') return true
+  const read = () => {
+    try {
+      return info.getSnapshot?.().referenceCount ?? 0
+    } catch {
+      return 0
+    }
+  }
+  if (read() === 0) return true
+  return new Promise((resolve) => {
+    let settled = false
+    let unsubscribe = () => {}
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      unsubscribe()
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      resolve(value)
+    }
+    const onAbort = () => { finish(false) }
+    const timer = setTimeout(() => { finish(false) }, RELEASE_WAIT_MS)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    try {
+      unsubscribe = info.subscribe(() => { if (read() === 0) finish(true) }) ?? (() => {})
+    } catch {
+      finish(false)
+      return
+    }
+    if (read() === 0) finish(true)
+  })
+}
+
+/**
+ * Dispose the Host Agent owning one Session, when this process runs one.
+ *
+ * The agent-loop teardown stops the loop, drains buffered events into durable
+ * storage, closes the writer, and detaches the Session from the store — so the
+ * removed log is final and the Session leaves every list.
+ * @param ctx - Host plugin context.
+ * @param sessionId - the Session whose Agent may run here.
+ * @returns whether an Agent lived here and was torn down.
+ */
+async function disposeHostAgent(ctx, sessionId) {
+  const agents = ctx.get('agents')
+  const agent = agents?.get?.(sessionId)
+  if (agent === undefined) return false
+  const handle = agents?.handlesOf?.(agent)
+  if (handle === undefined || typeof handle.dispose !== 'function') return false
+  try {
+    await handle.dispose()
+  } catch {
+    // Teardown failures are collected by the handle; the removal proceeds and
+    // reports what the filesystem says.
+  }
+  return true
 }
 
 /**
