@@ -23,6 +23,17 @@ DSH's built-in "Archive session" only hides a row; the log stays on disk. This p
 
 ## Install
 
+From npm (1.0.5):
+
+```bash
+dsh plugin --profile desktop add dsh-session-delete-pro
+# replace `desktop` with your profile name, or use Plugins → Add plugin with the package name
+```
+
+Restart DSH afterwards. The package's own `cordis.patch.yml` joins the profile's bundle layer automatically; no manual insert row is needed.
+
+Local development install (runs the working copy, edits take effect on reload):
+
 ```bash
 git clone https://github.com/ruichina/dsh-session-delete.git
 # or the Gitee mirror

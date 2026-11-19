@@ -11,7 +11,7 @@
  * Host reported.
  */
 window.__ModuleLoader__.load({
-  id: '@local/dsh-session-delete',
+  id: 'dsh-session-delete-pro',
   factory(require) {
     const React = require('react')
     const h = React.createElement
@@ -477,7 +477,7 @@ window.__ModuleLoader__.load({
 
         ctx.effect(() => {
           const style = document.createElement('style')
-          style.setAttribute('data-plugin', '@local/dsh-session-delete')
+          style.setAttribute('data-plugin', 'dsh-session-delete-pro')
           style.textContent = CSS
           document.head.appendChild(style)
           return () => { style.remove() }

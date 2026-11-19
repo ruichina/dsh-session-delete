@@ -24,6 +24,17 @@ DSH 自带的「归档会话」只是把会话从列表里隐藏，日志仍然�
 
 ## 安装
 
+从 npm 安装（1.0.5）：
+
+```bash
+dsh plugin --profile desktop add dsh-session-delete-pro
+# `desktop` 换成你的 profile 名；也可以 插件 → 添加插件，输入包名安装
+```
+
+装完重启 DSH 生效。插件包里的 `cordis.patch.yml` 会随包自动加入 profile 的 bundle 层，不需要手写挂载行。
+
+本地开发安装（改源码即时生效，装的是工作副本）：
+
 ```bash
 git clone https://github.com/ruichina/dsh-session-delete.git
 # 或 Gitee 镜像
