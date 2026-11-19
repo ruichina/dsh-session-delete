@@ -139,6 +139,19 @@ async function deleteOne(ctx, sessionId, signal) {
     }
   }
 
+  // A live Session may still hold its log in memory: `stat` then reports no
+  // physical location, so the removal would silently do nothing and the row
+  // would come back as "Ungrouped" once the log materialized. Flush first.
+  const sessions = ctx.get('sessions')
+  const liveSession = sessions === undefined ? undefined : sessions.get?.(sessionId)
+  if (liveSession !== undefined && typeof sessions.flush === 'function') {
+    try {
+      await sessions.flush(liveSession)
+    } catch {
+      // Best effort — a Session that cannot flush is reported by removeLog.
+    }
+  }
+
   const persistence = ctx.get('sessionPersistence')
   const snapshot = persistence === undefined ? undefined : await persistence.stat(sessionId, { signal })
   const logPath = snapshot === undefined ? undefined : snapshot.location?.path

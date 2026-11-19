@@ -392,21 +392,35 @@ window.__ModuleLoader__.load({
 
     /**
      * Repull the sidebar's session list in place, so no stale row survives.
-     * `sessions.refresh()` is the Client's own baseline pull: it updates the
-     * list rows without reloading the page, the conversation, or the composer.
+     * A plain baseline pull is not enough on its own: a Session that is still
+     * retained by an open view survives the pull and reappears under
+     * "Ungrouped" once its workspace account is gone. Drop that id locally
+     * first, then pull the baseline back.
      * @param ctx - Client plugin context.
-     * @returns whether the list was repulled.
+     * @param sessionId - the Session that no longer exists.
+     * @returns whether the list was updated.
      */
-    async function refreshSessionList(ctx) {
+    async function refreshSessionList(ctx, sessionId) {
       const sessions = ctx.get('sessions')
       if (sessions === undefined || sessions === null) return false
-      if (typeof sessions.refresh !== 'function') return false
-      try {
-        await sessions.refresh()
-        return true
-      } catch {
-        return false
+      let touched = false
+      if (typeof sessions.handleSessionRemoved === 'function') {
+        try {
+          sessions.handleSessionRemoved(sessionId)
+          touched = true
+        } catch {
+          // A missing row is fine; the pull below still normalizes the list.
+        }
       }
+      if (typeof sessions.refresh === 'function') {
+        try {
+          await sessions.refresh()
+          touched = true
+        } catch {
+          // Fall through to the caller's reload fallback.
+        }
+      }
+      return touched
     }
 
     /**
@@ -640,7 +654,7 @@ window.__ModuleLoader__.load({
                 // A row whose Session is already gone is stale Client state:
                 // repulling the list is the cleanup, not an error.
                 const gone = failure !== undefined
-                const refreshed = await refreshSessionList(ctx)
+                const refreshed = await refreshSessionList(ctx, request.sessionId)
                 pending.set({
                   sessionId: request.sessionId,
                   displayTitle: request.displayTitle,
