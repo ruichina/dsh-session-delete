@@ -7,6 +7,7 @@ English | [中文](README.md)
 DSH's built-in "Archive session" only hides a row; the log stays on disk. This plugin adds real deletion: **Delete session…** in the row menu (right-click, or the row's `...` menu), plus a trash button on row hover. Confirming removes the stored chat log, its projection cache, and the workspace entry.
 
 - Version: `1.0.5`
+- npm package: `dsh-session-delete-pro`
 - Tested with: DSH `0.2.2-rc.5` (desktop)
 - License: MIT
 - Repositories: [GitHub](https://github.com/ruichina/dsh-session-delete) · [Gitee mirror](https://gitee.com/jurassic-wangzr/dsh-session-delete)
@@ -20,6 +21,16 @@ DSH's built-in "Archive session" only hides a row; the log stays on disk. This p
 | Confirmation dialog | Cancel focused by default, Escape / backdrop click cancels, buttons disabled while deleting |
 | Success notice | A short "Session deleted" pill, then the row id is dropped locally and the list repulled in place (no page reload) — no "Ungrouped" duplicate is left behind |
 | Agent tool `session_delete` | The same Host method, taking a list of session ids |
+
+## Screenshots
+
+The delete confirmation dialog — danger-styled, with Cancel focused by default; Escape or a backdrop click cancels:
+
+![Delete confirmation dialog](docs/images/delete-confirm.png)
+
+Once installed it shows up under **Settings → Plugins → Installed** and can be disabled at any time; disabling restores the stock sidebar:
+
+![Plugins page](docs/images/plugin-page.png)
 
 ## Install
 
